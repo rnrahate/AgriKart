@@ -151,21 +151,26 @@ export async function getArticleByIdOrSlug(idOrSlug: string): Promise<Article> {
       throw new NotFoundError(`Article not found: ${idOrSlug}`);
     }
 
-    // Increment views atomically (fetch-and-update approach is safe for views)
-    const currentViews = data.view_count || 0;
-    const { data: updated, error: updateError } = await supabase
-      .from('articles')
-      .update({ view_count: currentViews + 1 })
-      .eq('id', data.id)
-      .select('*')
-      .single();
-
-    const resultData = updateError ? data : updated;
-    if (!updateError) {
-      resultData.view_count = currentViews + 1;
+    // Increment views atomically via RPC (with fallback)
+    let updatedViews = (data.view_count || 0) + 1;
+    try {
+      const { data: rpcViews, error: rpcError } = await supabase.rpc('increment_article_views', {
+        article_id: data.id,
+      });
+      if (!rpcError && typeof rpcViews === 'number') {
+        updatedViews = rpcViews;
+      } else {
+        await supabase
+          .from('articles')
+          .update({ view_count: updatedViews })
+          .eq('id', data.id);
+      }
+    } catch {
+      // Non-blocking view increment
     }
 
-    return mapArticle(resultData);
+    data.view_count = updatedViews;
+    return mapArticle(data);
   } catch (error) {
     if (error instanceof NotFoundError || error instanceof DatabaseError) throw error;
     throw new DatabaseError(`Retrieve article failed: ${String(error)}`);

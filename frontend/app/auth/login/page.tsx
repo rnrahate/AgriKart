@@ -3,10 +3,19 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { SignIn } from '@clerk/nextjs'
 import { supabase } from '@/lib/supabase'
+import { sanitizeError } from '@/lib/errorUtils'
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi'
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+
 export default function LoginPage() {
+  const isClerkConfigured = Boolean(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+    !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.includes('YOUR_CLERK')
+  )
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [userType, setUserType] = useState('farmer')
@@ -21,14 +30,41 @@ export default function LoginPage() {
     setError('')
 
     try {
+      let authUser: any = null
+
+      // 1. Attempt Supabase client login
       const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (supabaseError) throw supabaseError
+      if (!supabaseError && data?.user) {
+        authUser = data.user
+      } else {
+        // 2. Fallback to backend /auth/login which auto-confirms
+        console.warn('[AgriKart Auth]: Client login failed, attempting backend auto-confirmation...', supabaseError?.message)
+        const res = await fetch(`${API_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        })
 
-      const authUser = data.user
+        const backendResult = await res.json()
+        if (!res.ok || !backendResult.success) {
+          throw new Error(backendResult.error?.message || 'Invalid email or password')
+        }
+
+        const retry = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+        authUser = retry.data?.user || backendResult.user
+      }
+
+      if (!authUser?.id) {
+        throw new Error('Unable to authenticate account')
+      }
+
       const { data: usersProfile } = await supabase
         .from('users')
         .select('role')
@@ -43,17 +79,53 @@ export default function LoginPage() {
             .eq('id', authUser.id)
             .maybeSingle()
 
-      const actualRole = usersProfile?.role || appProfile?.role || userType
+      const actualRole = usersProfile?.role || appProfile?.role || authUser.role || userType
       const redirect = typeof window !== 'undefined'
         ? new URLSearchParams(window.location.search).get('redirect')
         : null
 
       router.push(redirect || (actualRole === 'vendor' ? '/vendor' : '/products'))
     } catch (err: any) {
-      setError(err.message)
+      setError(sanitizeError(err, 'Unable to sign in. Please verify your credentials and try again.'))
     } finally {
       setLoading(false)
     }
+  }
+
+  // If Clerk is configured with real API keys, render themed Clerk Sign In
+  if (isClerkConfigured) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4 py-8">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-green-200/30 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl"></div>
+        </div>
+
+        <div className="relative animate-fade-in flex flex-col items-center">
+          <div className="inline-flex items-center gap-2 mb-6">
+            <span className="text-3xl">🌾</span>
+            <span className="text-2xl font-extrabold text-gray-900">AgriKart</span>
+          </div>
+
+          <SignIn
+            routing="hash"
+            afterSignInUrl="/products"
+            signUpUrl="/auth/signup"
+            appearance={{
+              elements: {
+                card: 'bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 p-6',
+                formButtonPrimary: 'bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl py-3 shadow-md shadow-green-600/20 transition-all',
+                formFieldInput: 'rounded-xl border border-gray-200 focus:border-green-500 focus:ring-green-500',
+                headerTitle: 'text-2xl font-extrabold text-gray-900',
+                headerSubtitle: 'text-gray-500 text-sm',
+                socialButtonsBlockButton: 'rounded-xl border-gray-200 hover:bg-gray-50',
+                footerActionLink: 'text-green-600 hover:text-green-700 font-semibold',
+              },
+            }}
+          />
+        </div>
+      </div>
+    )
   }
 
   return (

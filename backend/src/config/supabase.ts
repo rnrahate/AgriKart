@@ -1,6 +1,6 @@
 /**
  * Supabase Configuration
- * Initializes Supabase client with proper authentication
+ * Initializes Supabase client with proper authentication and provides typed helper methods.
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -9,12 +9,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 /**
  * Validate required environment variables
  */
-function validateEnvironment(): void {
+export function validateEnvironment(): void {
   const requiredVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_KEY']
-  
-  const missing = requiredVars.filter(
-    (varName) => !process.env[varName]
-  )
+
+  const missing = requiredVars.filter((varName) => !process.env[varName])
 
   if (missing.length > 0) {
     throw new Error(
@@ -26,7 +24,7 @@ function validateEnvironment(): void {
 
 /**
  * Initialize Supabase client with anon key
- * Used for client-side operations
+ * Used for client-side and unprivileged operations
  */
 export function createSupabaseAnonClient(): SupabaseClient {
   validateEnvironment()
@@ -46,9 +44,7 @@ export function createSupabaseAnonClient(): SupabaseClient {
 
 /**
  * Initialize Supabase admin client with service role key
- * Used for admin operations (should only be used on backend)
- * 
- * WARNING: Never expose this key to the frontend!
+ * Used for backend admin operations (never expose to the frontend)
  */
 export function createSupabaseAdminClient(): SupabaseClient {
   validateEnvironment()
@@ -67,9 +63,10 @@ export function createSupabaseAdminClient(): SupabaseClient {
 }
 
 /**
- * Get singleton Supabase client (anon)
+ * Singleton instance caching
  */
 let supabaseAnonClient: SupabaseClient | null = null
+let supabaseAdminClient: SupabaseClient | null = null
 
 export function getSupabaseAnonClient(): SupabaseClient {
   if (!supabaseAnonClient) {
@@ -77,11 +74,6 @@ export function getSupabaseAnonClient(): SupabaseClient {
   }
   return supabaseAnonClient
 }
-
-/**
- * Get singleton Supabase admin client
- */
-let supabaseAdminClient: SupabaseClient | null = null
 
 export function getSupabaseAdminClient(): SupabaseClient {
   if (!supabaseAdminClient) {
@@ -91,26 +83,25 @@ export function getSupabaseAdminClient(): SupabaseClient {
 }
 
 /**
- * Verify JWT token using Supabase
+ * Cryptographically verify JWT token using Supabase Auth
  */
 export async function verifyJWT(token: string): Promise<any> {
-  const client = getSupabaseAnonClient()
-  
+  const client = getSupabaseAdminClient()
   const { data, error } = await client.auth.getUser(token)
-  
+
   if (error || !data.user) {
-    throw new Error('Invalid token')
+    throw new Error('Invalid or expired authentication token')
   }
 
   return data.user
 }
 
 /**
- * Get user by ID from auth.users table
+ * Fetch profile by user ID from profiles table
  */
 export async function getUserById(userId: string): Promise<any> {
   const client = getSupabaseAdminClient()
-  
+
   const { data, error } = await client
     .from('profiles')
     .select('*')
@@ -125,19 +116,18 @@ export async function getUserById(userId: string): Promise<any> {
 }
 
 /**
- * Get user by email from auth.users table
+ * Fetch profile by email from profiles table
  */
 export async function getUserByEmail(email: string): Promise<any> {
   const client = getSupabaseAdminClient()
-  
+
   const { data, error } = await client
     .from('profiles')
     .select('*')
     .eq('email', email)
-    .single()
+    .maybeSingle()
 
   if (error && error.code !== 'PGRST116') {
-    // PGRST116 means no rows returned
     throw new Error(`Failed to fetch user: ${error.message}`)
   }
 
@@ -149,14 +139,16 @@ export async function getUserByEmail(email: string): Promise<any> {
  */
 export async function createAuthUser(
   email: string,
-  password: string
+  password: string,
+  metadata: Record<string, any> = {}
 ): Promise<{ userId: string; user: any }> {
   const client = getSupabaseAdminClient()
-  
+
   const { data, error } = await client.auth.admin.createUser({
     email,
     password,
-    email_confirm: false, // User must verify email
+    email_confirm: true,
+    user_metadata: metadata,
   })
 
   if (error) {
@@ -178,7 +170,6 @@ export async function createAuthUser(
  */
 export async function deleteAuthUser(userId: string): Promise<void> {
   const client = getSupabaseAdminClient()
-  
   const { error } = await client.auth.admin.deleteUser(userId)
 
   if (error) {
@@ -191,9 +182,9 @@ export async function deleteAuthUser(userId: string): Promise<void> {
  */
 export async function sendPasswordResetEmail(email: string): Promise<void> {
   const client = getSupabaseAnonClient()
-  
+
   const { error } = await client.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.FRONTEND_URL}/auth/reset-password`,
+    redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password`,
   })
 
   if (error) {
@@ -202,12 +193,12 @@ export async function sendPasswordResetEmail(email: string): Promise<void> {
 }
 
 /**
- * Reset password with token
+ * Reset password for a user
  */
-export async function resetPassword(token: string, newPassword: string): Promise<void> {
-  const client = getSupabaseAnonClient()
-  
-  const { error } = await client.auth.updateUser({
+export async function resetPassword(userIdOrToken: string, newPassword: string): Promise<void> {
+  const client = getSupabaseAdminClient()
+
+  const { error } = await client.auth.admin.updateUserById(userIdOrToken, {
     password: newPassword,
   })
 
@@ -217,11 +208,11 @@ export async function resetPassword(token: string, newPassword: string): Promise
 }
 
 /**
- * Verify email with token
+ * Verify email with token hash
  */
 export async function verifyEmail(token: string): Promise<void> {
   const client = getSupabaseAnonClient()
-  
+
   const { error } = await client.auth.verifyOtp({
     token_hash: token,
     type: 'email',
@@ -233,11 +224,13 @@ export async function verifyEmail(token: string): Promise<void> {
 }
 
 /**
- * Export for use in other modules
+ * Export bundle for use in other modules
  */
 export const supabaseConfig = {
   getSupabaseAnonClient,
   getSupabaseAdminClient,
+  createSupabaseAnonClient,
+  createSupabaseAdminClient,
   verifyJWT,
   getUserById,
   getUserByEmail,

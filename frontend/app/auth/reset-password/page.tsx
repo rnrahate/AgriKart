@@ -4,6 +4,7 @@ import { useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { FiArrowLeft, FiLock, FiEye, FiEyeOff, FiCheck } from 'react-icons/fi'
+import { sanitizeError } from '@/lib/errorUtils'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
@@ -73,7 +74,7 @@ function ResetPasswordForm() {
       setVerifiedOtp(code)
       setStep('reset')
     } catch (err: any) {
-      setError(err.message)
+      setError(sanitizeError(err, 'Invalid or expired code. Please request a new OTP.'))
     } finally {
       setLoading(false)
     }
@@ -103,7 +104,7 @@ function ResetPasswordForm() {
 
       setStep('done')
     } catch (err: any) {
-      setError(err.message)
+      setError(sanitizeError(err, 'Unable to reset password. Please try again.'))
     } finally {
       setLoading(false)
     }

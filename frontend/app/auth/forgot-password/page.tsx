@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { FiMail, FiArrowLeft } from 'react-icons/fi'
+import { sanitizeError } from '@/lib/errorUtils'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
@@ -32,7 +33,7 @@ export default function ForgotPasswordPage() {
 
       setSent(true)
     } catch (err: any) {
-      setError(err.message || 'Something went wrong')
+      setError(sanitizeError(err, 'Unable to send OTP. Please verify your email and try again.'))
     } finally {
       setLoading(false)
     }

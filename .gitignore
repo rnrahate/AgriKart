@@ -92,6 +92,17 @@ mobile/.expo-shared/
 **/venv/
 **/.venv/
 
+# ---- Datasets & ML Models (Large Files) ----
+ml/datasets/
+**/datasets/
+models/
+**/*.pt
+**/*.pth
+**/*.h5
+**/*.onnx
+*.tsbuildinfo
+**/*.tsbuildinfo
+
 # ---- Misc ----
 **/*.tgz
 **/*.zip
@@ -101,3 +112,4 @@ mobile/.expo-shared/
 **/env.txt
 **/.pytest_cache/
 **/.sixth/
+

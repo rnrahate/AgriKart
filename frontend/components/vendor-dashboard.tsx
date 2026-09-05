@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { FiBarChart2, FiBriefcase, FiFileText, FiPackage, FiPlus, FiSave } from 'react-icons/fi'
 import { supabase } from '@/lib/supabase'
+import { sanitizeError } from '@/lib/errorUtils'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { normalizeProduct } from '@/lib/api/products'
 
@@ -119,7 +120,7 @@ export default function VendorDashboard() {
 
       setArticles(articleData || [])
     } catch (err: any) {
-      setError(err.message || 'Failed to load vendor dashboard')
+      setError(sanitizeError(err, 'Failed to load vendor dashboard'))
     } finally {
       setLoading(false)
     }
@@ -222,7 +223,7 @@ export default function VendorDashboard() {
 
       showMessage('Vendor profile saved')
     } catch (err: any) {
-      setError(err.message || 'Failed to save vendor profile')
+      setError(sanitizeError(err, 'Failed to save vendor profile'))
     } finally {
       setSaving(false)
     }
@@ -261,7 +262,7 @@ export default function VendorDashboard() {
       await loadDashboard()
       setActiveTab('products')
     } catch (err: any) {
-      setError(err.message || 'Failed to create product')
+      setError(sanitizeError(err, 'Failed to create product'))
     } finally {
       setSaving(false)
     }
@@ -306,7 +307,7 @@ export default function VendorDashboard() {
       await loadDashboard()
       setActiveTab('news')
     } catch (err: any) {
-      setError(err.message || 'Failed to create news article')
+      setError(sanitizeError(err, 'Failed to create news article'))
     } finally {
       setSaving(false)
     }

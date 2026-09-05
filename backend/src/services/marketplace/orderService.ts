@@ -130,7 +130,7 @@ export async function getOrderWithItems(orderId: string): Promise<OrderWithItems
       items: itemsData as OrderItem[],
     };
   } catch (error) {
-    if (error instanceof (NotFoundError || DatabaseError)) throw error;
+    if (error instanceof NotFoundError || error instanceof DatabaseError) throw error;
     throw new DatabaseError(`Failed to get order with items: ${String(error)}`);
   }
 }

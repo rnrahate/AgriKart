@@ -3,10 +3,19 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { SignUp } from '@clerk/nextjs'
 import { supabase } from '@/lib/supabase'
+import { sanitizeError } from '@/lib/errorUtils'
 import { FiMail, FiLock, FiUser, FiPhone, FiEye, FiEyeOff } from 'react-icons/fi'
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+
 export default function SignupPage() {
+  const isClerkConfigured = Boolean(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+    !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.includes('YOUR_CLERK')
+  )
+
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -43,84 +52,135 @@ export default function SignupPage() {
     }
 
     try {
-      const { data, error: supabaseError } = await supabase.auth.signUp({
+      // 1. Create account via backend admin API (automatically sets email_confirm: true)
+      try {
+        const res = await fetch(`${API_URL}/auth/signup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+            fullName: formData.fullName,
+            phone: formData.phone,
+            role: formData.userType,
+          }),
+        })
+
+        const result = await res.json()
+        if (!res.ok) {
+          if (result.error?.code === 'CONFLICT' || result.error?.message?.toLowerCase().includes('already')) {
+            throw new Error('An account with this email address already exists. Please sign in instead.')
+          }
+          throw new Error(result.error?.message || 'Unable to create account. Please check your details.')
+        }
+      } catch (backendErr: any) {
+        if (backendErr.message?.includes('already exists')) {
+          throw backendErr
+        }
+        console.warn('[AgriKart Auth]: Backend signup notice, falling back to direct client creation:', backendErr)
+        // Fallback to Supabase client signup if backend is unreachable
+        const { error: clientErr } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.fullName,
+              role: formData.userType,
+              phone: formData.phone,
+            },
+          },
+        })
+        if (clientErr) throw clientErr
+      }
+
+      // 2. Immediately establish client session in Supabase Auth
+      const { error: loginError } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
-        options: {
-          data: {
-            full_name: formData.fullName,
-            role: formData.userType,
-          },
-        },
       })
 
-      if (supabaseError) throw supabaseError
-      if (!data.user?.id) throw new Error('Unable to create account profile')
-
-      // Save user profile data
-      const profilePayload = {
-        id: data.user.id,
-        email: formData.email,
-        full_name: formData.fullName,
-        phone: formData.phone,
-        role: formData.userType,
+      if (loginError) {
+        console.warn('[AgriKart Auth]: Auto-login notice, redirecting to login:', loginError)
+        router.push('/auth/login')
+        return
       }
 
-      const { error: usersError } = await supabase.from('users').upsert([
-        {
-          ...profilePayload,
-          verified: Boolean(data.user.email_confirmed_at),
-        },
-      ])
-      if (usersError) throw usersError
-
-      const { error: profilesError } = await supabase.from('profiles').upsert([
-        {
-          ...profilePayload,
-          language: 'en',
-          email_verified: Boolean(data.user.email_confirmed_at),
-          phone_verified: false,
-          verification_status: 'pending',
-        },
-      ])
-      if (profilesError) throw profilesError
-
-      if (formData.userType === 'vendor') {
-        const businessName = `${formData.fullName}'s Business`
-        const { error: vendorError } = await supabase.from('vendors').upsert([
-          {
-            id: data.user.id,
-            user_id: data.user.id,
-            company_name: businessName,
-            business_name: businessName,
-            owner_name: formData.fullName,
-            phone_business: formData.phone,
-            business_phone: formData.phone,
-            description: 'New vendor profile',
-            business_description: 'New vendor profile',
-            is_active: true,
-          },
-        ])
-
-        if (vendorError) {
-          const { error: fallbackVendorError } = await supabase.from('vendors').upsert([
-            {
-              id: data.user.id,
-              company_name: businessName,
-              phone_business: formData.phone,
-              description: 'New vendor profile',
-            },
-          ])
-          if (fallbackVendorError) throw fallbackVendorError
-        }
-      }
-
-      router.push('/auth/verify')
+      // 3. Authenticated successfully! Navigate to destination immediately
+      const destination = formData.userType === 'vendor' ? '/vendor' : '/products'
+      router.push(destination)
     } catch (err: any) {
-      setError(err.message)
+      setError(sanitizeError(err, 'Unable to complete signup. Please verify your details and try again.'))
     } finally {
       setLoading(false)
     }
+  }
+
+  // If Clerk is configured with real API keys, render themed Clerk Sign Up
+  if (isClerkConfigured) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4 py-8">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-green-200/30 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl"></div>
+        </div>
+
+        <div className="relative animate-fade-in flex flex-col items-center">
+          <div className="inline-flex items-center gap-2 mb-4">
+            <span className="text-3xl">🌾</span>
+            <span className="text-2xl font-extrabold text-gray-900">AgriKart</span>
+          </div>
+
+          {/* Account Type Selector for Clerk */}
+          <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl border border-gray-200/80 shadow-sm flex items-center gap-1 mb-5 w-full max-w-[400px]">
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(prev => ({ ...prev, userType: 'farmer' }))
+                if (typeof window !== 'undefined') localStorage.setItem('agrikart_signup_role', 'farmer')
+              }}
+              className={`flex-1 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                formData.userType === 'farmer'
+                  ? 'bg-green-600 text-white shadow-md'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/60'
+              }`}
+            >
+              🌾 Farmer Account
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(prev => ({ ...prev, userType: 'vendor' }))
+                if (typeof window !== 'undefined') localStorage.setItem('agrikart_signup_role', 'vendor')
+              }}
+              className={`flex-1 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                formData.userType === 'vendor'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/60'
+              }`}
+            >
+              🏪 Vendor Account
+            </button>
+          </div>
+
+          <SignUp
+            routing="hash"
+            afterSignUpUrl="/profile?welcome=true"
+            signInUrl="/auth/login"
+            appearance={{
+              elements: {
+                card: 'bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 p-6',
+                formButtonPrimary: 'bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl py-3 shadow-md shadow-green-600/20 transition-all',
+                formFieldInput: 'rounded-xl border border-gray-200 focus:border-green-500 focus:ring-green-500',
+                headerTitle: 'text-2xl font-extrabold text-gray-900',
+                headerSubtitle: 'text-gray-500 text-sm',
+                socialButtonsBlockButton: 'rounded-xl border-gray-200 hover:bg-gray-50',
+                footerActionLink: 'text-green-600 hover:text-green-700 font-semibold',
+              },
+            }}
+          />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -174,7 +234,7 @@ export default function SignupPage() {
 
             {/* Full Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
               <div className="relative">
                 <FiUser className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
@@ -183,7 +243,7 @@ export default function SignupPage() {
                   value={formData.fullName}
                   onChange={handleChange}
                   className="input-modern pl-10"
-                  placeholder="John Doe"
+                  placeholder="Ramesh Kumar"
                   required
                 />
               </div>
@@ -191,7 +251,7 @@ export default function SignupPage() {
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
               <div className="relative">
                 <FiMail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
@@ -200,7 +260,7 @@ export default function SignupPage() {
                   value={formData.email}
                   onChange={handleChange}
                   className="input-modern pl-10"
-                  placeholder="your@email.com"
+                  placeholder="ramesh@example.com"
                   required
                 />
               </div>
@@ -208,7 +268,7 @@ export default function SignupPage() {
 
             {/* Phone */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
               <div className="relative">
                 <FiPhone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
@@ -218,14 +278,13 @@ export default function SignupPage() {
                   onChange={handleChange}
                   className="input-modern pl-10"
                   placeholder="+91 98765 43210"
-                  required
                 />
               </div>
             </div>
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <div className="relative">
                 <FiLock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
@@ -234,7 +293,7 @@ export default function SignupPage() {
                   value={formData.password}
                   onChange={handleChange}
                   className="input-modern pl-10 pr-10"
-                  placeholder="Min 6 characters"
+                  placeholder="Min. 6 characters"
                   required
                 />
                 <button
@@ -249,7 +308,7 @@ export default function SignupPage() {
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
               <div className="relative">
                 <FiLock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
@@ -257,21 +316,21 @@ export default function SignupPage() {
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className="input-modern pl-10"
-                  placeholder="Repeat password"
+                  className="input-modern pl-10 pr-10"
+                  placeholder="Re-enter password"
                   required
                 />
               </div>
             </div>
 
-            {/* Error */}
+            {/* Error Message */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm animate-fade-in">
                 {error}
               </div>
             )}
 
-            {/* Submit */}
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
@@ -280,7 +339,7 @@ export default function SignupPage() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                  Creating account...
+                  Creating Account...
                 </span>
               ) : (
                 'Create Account'
@@ -288,6 +347,7 @@ export default function SignupPage() {
             </button>
           </form>
 
+          {/* Footer */}
           <div className="mt-6 text-center">
             <p className="text-gray-500 text-sm">
               Already have an account?{' '}

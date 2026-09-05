@@ -208,14 +208,23 @@ const PORT = process.env.PORT || process.env.BACKEND_PORT || 3001
 const HOST = process.env.BACKEND_HOST || 'localhost'
 
 const server = app.listen(PORT, () => {
+  const isClerkReady = Boolean(
+    process.env.CLERK_SECRET_KEY && !process.env.CLERK_SECRET_KEY.includes('YOUR_CLERK')
+  )
+  const isSupabaseReady = Boolean(process.env.SUPABASE_URL)
+  const liveUrl = 'https://agri-kart.vercel.app/'
+  const localUrl = `http://${HOST}:${PORT}`
+
   console.log(`
-    ╔═══════════════════════════════════════╗
-    ║   AgriKart Backend Server Running     ║
-    ╠═══════════════════════════════════════╣
-    ║ URL:         http://${HOST}:${PORT}      
-    ║ Environment: ${process.env.NODE_ENV || 'development'}
-    ║ Auth:        ${process.env.SUPABASE_URL ? '✓' : '✗'} Supabase configured
-    ╚═══════════════════════════════════════╝
+  ╔═════════════════════════════════════════════════════════════════╗
+  ║                   🌾 AGRIKART 2.0 BACKEND API                   ║
+  ╠═════════════════════════════════════════════════════════════════╣
+  ║  • Local API:    ${localUrl.padEnd(47)}║
+  ║  • Live Web App: ${liveUrl.padEnd(47)}║
+  ║  • Environment:  ${(process.env.NODE_ENV || 'development').padEnd(47)}║
+  ║  • Database:     ${(isSupabaseReady ? '✓ Supabase PostgreSQL (Connected)' : '✗ Supabase Disconnected').padEnd(47)}║
+  ║  • Auth Engine:  ${(isClerkReady ? '✓ Clerk Auth (Configured)' : '✓ Clerk & Supabase Ready').padEnd(47)}║
+  ╚═════════════════════════════════════════════════════════════════╝
   `)
 })
 

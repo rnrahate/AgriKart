@@ -4,15 +4,15 @@
  * Delegates password handling to Supabase Auth
  */
 
-import type { AuthContext, LoginRequest, SignUpRequest, AuthResponse } from '../../types/auth'
+import type { LoginRequest, SignUpRequest, AuthResponse } from '../../types/auth'
 import type { UserProfile } from '../../types/user'
 import { 
-  createAuthUser, 
   getUserByEmail, 
   sendPasswordResetEmail,
   resetPassword,
   verifyEmail,
   getSupabaseAdminClient,
+  getSupabaseAnonClient,
 } from '../../config/supabase'
 import {
   AuthenticationError,
@@ -27,7 +27,7 @@ import {
 } from '../../utils/validators'
 
 /**
- * Login user with email and password
+ * Login user with email and password using Supabase Auth
  */
 export async function login(
   credentials: LoginRequest
@@ -46,26 +46,65 @@ export async function login(
 
   const { email, password } = validation.data
 
-  // Check if user exists in profiles table
-  const existingUser = await getUserByEmail(email)
-  if (!existingUser) {
+  // Supabase Auth handles password verification securely
+  const anon = getSupabaseAnonClient()
+  let { data, error } = await anon.auth.signInWithPassword({
+    email,
+    password,
+  })
+
+  // If login failed, check if the user is unconfirmed in Supabase Auth and auto-confirm them
+  if (error) {
+    try {
+      const admin = getSupabaseAdminClient()
+      const { data: userList } = await admin.auth.admin.listUsers()
+      const targetUser = userList?.users?.find(
+        (u) => u.email?.toLowerCase() === email.toLowerCase()
+      )
+
+      if (targetUser && !targetUser.email_confirmed_at) {
+        await admin.auth.admin.updateUserById(targetUser.id, {
+          email_confirm: true,
+        })
+        await admin.from('profiles').update({ email_verified: true }).eq('id', targetUser.id)
+
+        const retry = await anon.auth.signInWithPassword({
+          email,
+          password,
+        })
+        if (!retry.error && retry.data.user && retry.data.session) {
+          data = retry.data
+          error = null
+        }
+      }
+    } catch (autoConfirmErr) {
+      console.error('[AgriKart Auth]: Auto-confirm recovery notice:', autoConfirmErr)
+    }
+  }
+
+  if (error || !data?.user || !data?.session) {
     throw new AuthenticationError(
       'Invalid email or password',
       ErrorCode.INVALID_CREDENTIALS
     )
   }
 
-  // Supabase Auth handles password verification via JWT
-  // Frontend will use Supabase Auth SDK to get JWT token
-  // This endpoint assumes JWT is already validated by middleware
-  
+  // Fetch application profile for role and details
+  const admin = getSupabaseAdminClient()
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, email, role')
+    .eq('id', data.user.id)
+    .maybeSingle()
+
   return {
     success: true,
     message: 'Login successful',
+    token: data.session.access_token,
     user: {
-      id: existingUser.id,
-      email: existingUser.email,
-      role: existingUser.role,
+      id: data.user.id,
+      email: data.user.email || email,
+      role: profile?.role || 'farmer',
     },
   }
 }
@@ -98,8 +137,48 @@ export async function signup(
   } = validation.data
 
   // Check if user already exists
+  const admin = getSupabaseAdminClient()
   const existingUser = await getUserByEmail(email)
+
   if (existingUser) {
+    // If the account was previously created with unconfirmed email, recover it!
+    try {
+      const { data: userList } = await admin.auth.admin.listUsers()
+      const unconfirmedUser = userList?.users?.find(
+        (u) => u.email?.toLowerCase() === email.toLowerCase() && !u.email_confirmed_at
+      )
+
+      if (unconfirmedUser) {
+        await admin.auth.admin.updateUserById(unconfirmedUser.id, {
+          password,
+          email_confirm: true,
+          user_metadata: { full_name: fullName, role, phone },
+        })
+
+        await admin.from('profiles').upsert({
+          id: unconfirmedUser.id,
+          email,
+          full_name: fullName,
+          phone: phone || null,
+          role,
+          email_verified: true,
+          updated_at: new Date().toISOString(),
+        })
+
+        return {
+          success: true,
+          message: 'Account created and activated successfully',
+          user: {
+            id: unconfirmedUser.id,
+            email,
+            role,
+          },
+        }
+      }
+    } catch (recoverErr) {
+      console.error('[AgriKart Auth]: Unconfirmed user recovery notice:', recoverErr)
+    }
+
     throw new ConflictError(
       'Email address is already registered',
       {
@@ -108,61 +187,84 @@ export async function signup(
     )
   }
 
-  // Create auth user in Supabase Auth (password is hashed by Supabase)
-  let userId: string
-  try {
-    const result = await createAuthUser(email, password)
-    userId = result.userId
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('already')) {
+  // Create auth user in Supabase Auth (with email_confirm: true)
+  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: fullName,
+      role,
+    },
+  })
+
+  if (authError || !authData.user) {
+    if (authError?.message?.toLowerCase().includes('already')) {
+      // Attempt recovery for unconfirmed user in auth.users
+      try {
+        const { data: userList } = await admin.auth.admin.listUsers()
+        const unconfirmedUser = userList?.users?.find(
+          (u) => u.email?.toLowerCase() === email.toLowerCase() && !u.email_confirmed_at
+        )
+
+        if (unconfirmedUser) {
+          await admin.auth.admin.updateUserById(unconfirmedUser.id, {
+            password,
+            email_confirm: true,
+            user_metadata: { full_name: fullName, role, phone },
+          })
+
+          await admin.from('profiles').upsert({
+            id: unconfirmedUser.id,
+            email,
+            full_name: fullName,
+            phone: phone || null,
+            role,
+            email_verified: true,
+            updated_at: new Date().toISOString(),
+          })
+
+          return {
+            success: true,
+            message: 'Account created and activated successfully',
+            user: {
+              id: unconfirmedUser.id,
+              email,
+              role,
+            },
+          }
+        }
+      } catch (recoverErr) {
+        console.error('[AgriKart Auth]: User recovery notice:', recoverErr)
+      }
+
       throw new ConflictError('Email address is already registered')
     }
-    throw error
+    throw new AuthenticationError(
+      authError?.message || 'User creation failed',
+      ErrorCode.VALIDATION_ERROR
+    )
   }
 
-  // Create user profile in profiles table
-  const supabase = getSupabaseAdminClient()
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .insert({
-      id: userId,
-      email,
-      full_name: fullName,
-      phone: phone || null,
-      role,
-      language: 'en',
-      location: location || null,
-      email_verified: false,
-      phone_verified: false,
-      verification_status: 'pending',
-      notification_preferences: {
-        emailNotifications: true,
-        pushNotifications: true,
-        smsNotifications: false,
-        newsletterSubscribed: false,
-        schemeAlerts: true,
-        diseaseAlerts: true,
-        orderUpdates: true,
-      },
-    })
-    .select()
-    .single()
+  const userId = authData.user.id
 
-  if (profileError) {
-    // Clean up auth user if profile creation fails
-    try {
-      const adminClient = getSupabaseAdminClient()
-      await adminClient.auth.admin.deleteUser(userId)
-    } catch (cleanupError) {
-      console.error('Failed to cleanup auth user:', cleanupError)
-    }
-
-    throw new Error(`Failed to create user profile: ${profileError.message}`)
-  }
+  // Update profile details created by trigger
+  await admin.from('profiles').upsert({
+    id: userId,
+    email,
+    full_name: fullName,
+    phone: phone || null,
+    role,
+    language: 'en',
+    location: location ? `${location.district || ''}, ${location.state}` : null,
+    state: location?.state || null,
+    verification_status: 'pending',
+    updated_at: new Date().toISOString(),
+  })
 
   return {
     success: true,
-    message: 'Account created successfully. Please verify your email.',
+    message: 'Account created successfully',
     user: {
       id: userId,
       email,
@@ -172,10 +274,23 @@ export async function signup(
 }
 
 /**
+ * Change user password
+ */
+export async function changePassword(userId: string, newPassword: string): Promise<void> {
+  const admin = getSupabaseAdminClient()
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    password: newPassword,
+  })
+
+  if (error) {
+    throw new AuthenticationError(`Failed to update password: ${error.message}`)
+  }
+}
+
+/**
  * Request password reset
  */
 export async function requestPasswordReset(email: string): Promise<AuthResponse> {
-  // Validate email
   if (!validateEmail(email)) {
     throw new AuthenticationError(
       'Invalid email address',
@@ -183,17 +298,14 @@ export async function requestPasswordReset(email: string): Promise<AuthResponse>
     )
   }
 
-  // Check if user exists
   const user = await getUserByEmail(email)
   if (!user) {
-    // Return success even if user doesn't exist (security practice)
     return {
       success: true,
       message: 'If an account exists, you will receive a password reset email',
     }
   }
 
-  // Send password reset email
   try {
     await sendPasswordResetEmail(email)
   } catch (error) {
@@ -262,9 +374,6 @@ export async function confirmEmailVerification(token: string): Promise<AuthRespo
     )
   }
 
-  // Mark profile as email verified
-  // This would typically be done via an after-auth trigger in Supabase
-  
   return {
     success: true,
     message: 'Email verified successfully',
@@ -343,12 +452,10 @@ function mapProfileData(dbProfile: any): UserProfile {
   }
 }
 
-/**
- * Export auth service
- */
 export const authService = {
   login,
   signup,
+  changePassword,
   requestPasswordReset,
   confirmPasswordReset,
   confirmEmailVerification,
