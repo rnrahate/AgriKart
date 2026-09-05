@@ -84,7 +84,7 @@ export async function initiateRazorpayCheckout(options: CheckoutOptions): Promis
     throw new Error(orderData.error || 'Failed to create payment order with server')
   }
 
-  const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || orderData.key_id
+  const keyId = orderData.key_id || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
 
   if (!keyId) {
     throw new Error('Razorpay Key ID is not configured.')

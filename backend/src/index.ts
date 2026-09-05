@@ -12,7 +12,7 @@ import morgan from 'morgan'
 import dotenv from 'dotenv'
 import type { Request, Response, NextFunction } from 'express'
 
-// Load environment variables
+// Load environment variables (live mode updated)
 dotenv.config()
 
 // Import routes and middleware
