@@ -461,6 +461,23 @@ export default function CheckoutPage() {
                     </div>
                   </label>
                 </div>
+
+                {paymentMethod === 'razorpay' && (
+                  <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl text-blue-950 text-xs space-y-1.5">
+                    <p className="font-bold flex items-center gap-1.5 text-blue-900">
+                      <span>🧪 Razorpay Test Mode Guide</span>
+                    </p>
+                    <p className="text-blue-800 leading-relaxed">
+                      Scanning the test QR code with real phone banking apps (GPay, PhonePe, Paytm) will say <strong>&quot;Invalid UPI ID&quot;</strong> because test VPAs only exist inside Razorpay&apos;s sandbox, not on live bank networks.
+                    </p>
+                    <p className="text-blue-800 pt-0.5 leading-relaxed">
+                      👉 <strong>To test in Sandbox:</strong> In the payment modal, select <strong>UPI</strong> &gt; <strong>UPI ID / VPA</strong> and type <code className="bg-blue-100 text-blue-900 px-1.5 py-0.5 rounded font-mono font-bold">success@razorpay</code>, or choose <strong>Card / NetBanking</strong> and click <strong>Success</strong>.
+                    </p>
+                    <p className="text-[11px] text-blue-700">
+                      To accept real payments via QR code from real customer apps, replace with Razorpay Live Keys (<code className="font-mono">rzp_live_...</code>).
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Error Message Box */}
