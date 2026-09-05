@@ -94,8 +94,17 @@ mobile/.expo-shared/
 
 # ---- Datasets & ML Models (Large Files) ----
 ml/datasets/
+ml/datasets/**
 **/datasets/
+**/datasets/**
+**/Plant_leave_diseases_dataset_with_augmentation/
+**/Plant_leave_diseases_dataset_with_augmentation/**
+ml/**/*.JPG
+ml/**/*.jpg
+ml/**/*.jpeg
+ml/**/*.png
 models/
+models/**
 **/*.pt
 **/*.pth
 **/*.h5
