@@ -13,7 +13,7 @@ export default function Navbar() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { items } = useCart()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const router = useRouter()
   const isVendor = user?.role === 'vendor'
   const cartCount = isVendor ? 0 : items.length
@@ -30,7 +30,7 @@ export default function Navbar() {
   }, [])
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    await logout()
     setIsOpen(false)
     setDropdownOpen(false)
     router.push('/')
@@ -48,7 +48,7 @@ export default function Navbar() {
     { href: '/assistant', label: 'AI Assistant', auth: true },
     { href: '/schemes', label: 'Schemes', auth: true },
     { href: '/news', label: 'News', auth: true },
-    { href: '/auth/signup', label: 'Sell on AgriKart', auth: false },
+    { href: '/profile?tab=role', label: 'Sell on AgriKart', auth: true },
   ]
 
   const vendorLinks = [
@@ -141,13 +141,23 @@ export default function Navbar() {
                       <FiUser size={16} />
                       My Profile
                     </Link>
+                    {isVendor && (
+                      <Link
+                        href="/vendor"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 font-medium transition-colors"
+                      >
+                        <FiSettings size={16} />
+                        Vendor Dashboard
+                      </Link>
+                    )}
                     <Link
-                      href={isVendor ? '/vendor' : '/profile?tab=settings'}
+                      href="/profile?tab=settings"
                       onClick={() => setDropdownOpen(false)}
                       className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 transition-colors"
                     >
                       <FiSettings size={16} />
-                      {isVendor ? 'Vendor Dashboard' : 'Settings'}
+                      Settings & Preferences
                     </Link>
                   </div>
 
@@ -240,12 +250,21 @@ export default function Navbar() {
                   >
                     <FiUser size={16} /> My Profile
                   </Link>
+                  {isVendor && (
+                    <Link
+                      href="/vendor"
+                      className="flex items-center gap-3 px-3 py-2.5 text-emerald-700 hover:bg-emerald-50 rounded-lg text-sm font-medium transition-colors"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      <FiSettings size={16} /> Vendor Dashboard
+                    </Link>
+                  )}
                   <Link
-                    href={isVendor ? '/vendor' : '/profile?tab=settings'}
+                    href="/profile?tab=settings"
                     className="flex items-center gap-3 px-3 py-2.5 text-gray-700 hover:bg-green-50 hover:text-green-700 rounded-lg text-sm font-medium transition-colors"
                     onClick={() => setIsOpen(false)}
                   >
-                    <FiSettings size={16} /> {isVendor ? 'Vendor Dashboard' : 'Settings'}
+                    <FiSettings size={16} /> Settings & Preferences
                   </Link>
                   <button
                     onClick={handleLogout}

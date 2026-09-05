@@ -48,9 +48,12 @@ export async function listProducts(
       query = query.gte('average_rating', filter.min_rating);
     }
 
-    // Full-text search
+    // Full-text search with sanitized input
     if (filter.search) {
-      query = query.or(`name.ilike.%${filter.search}%,description.ilike.%${filter.search}%`);
+      const sanitized = filter.search.replace(/[,.()%"'\\]/g, ' ').trim();
+      if (sanitized) {
+        query = query.or(`name.ilike.%${sanitized}%,description.ilike.%${sanitized}%`);
+      }
     }
 
     // Tag filtering (array contains)

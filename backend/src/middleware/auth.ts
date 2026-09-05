@@ -1,6 +1,6 @@
 /**
  * Authentication Middleware
- * Validates JWT tokens and authorizes requests
+ * Validates JWT tokens cryptographically via Supabase and authorizes requests
  */
 
 import type { Request, Response, NextFunction } from 'express'
@@ -11,7 +11,7 @@ import {
   ErrorCode,
 } from '../utils/errors'
 import { roleService } from '../services/auth/roleService'
-import { createSupabaseAdminClient } from '../config/supabase'
+import { createSupabaseAdminClient, verifyJWT } from '../config/supabase'
 
 /**
  * Extend Express Request to include auth context
@@ -25,12 +25,33 @@ declare global {
 }
 
 /**
+ * Helper to fetch the application profile from DB
+ */
+async function getApplicationProfile(userId?: string, email?: string): Promise<any | null> {
+  if (!userId && !email) return null
+
+  const supabase = createSupabaseAdminClient()
+  const selectors = [
+    { table: 'profiles', column: userId ? 'id' : 'email', value: userId || email },
+    { table: 'users', column: userId ? 'id' : 'email', value: userId || email },
+  ]
+
+  for (const selector of selectors) {
+    const { data, error } = await supabase
+      .from(selector.table)
+      .select('*')
+      .eq(selector.column, selector.value)
+      .maybeSingle()
+
+    if (!error && data) return data
+  }
+
+  return null
+}
+
+/**
  * JWT authentication middleware
- * Extracts and validates JWT token from request
- * 
- * JWT should be in:
- * 1. Authorization header: Bearer <token>
- * 2. HttpOnly cookie: sb-auth-token
+ * Extracts and cryptographically validates JWT token from request
  */
 export async function authMiddleware(
   req: Request,
@@ -38,7 +59,6 @@ export async function authMiddleware(
   next: NextFunction
 ): Promise<void> {
   try {
-    // Extract JWT from Authorization header or cookies
     let token: string | null = null
 
     // Try Authorization header first
@@ -48,7 +68,7 @@ export async function authMiddleware(
     }
 
     // Fall back to HttpOnly cookie
-    if (!token) {
+    if (!token && req.cookies) {
       token = req.cookies['sb-auth-token'] || req.cookies['auth-token']
     }
 
@@ -59,19 +79,17 @@ export async function authMiddleware(
       )
     }
 
-    // Verify JWT
-    // In production, use Supabase.auth.getUser(token) or
-    // a proper JWT verification library with RS256 keys
-    const decoded = verifyJWT(token)
-    const profile = await getApplicationProfile(decoded.sub || decoded.user_id, decoded.email)
+    // Cryptographically verify token with Supabase Auth
+    const user = await verifyJWT(token)
+    const profile = await getApplicationProfile(user.id, user.email)
 
-    // Attach auth context to request
+    // Attach verified auth context to request
     req.auth = {
-      userId: decoded.sub || decoded.user_id,
-      email: profile?.email || decoded.email,
-      role: (profile?.role || decoded.user_metadata?.role || decoded.app_metadata?.role || 'farmer') as UserRole,
-      emailVerified: profile?.email_verified ?? profile?.verified ?? decoded.email_verified ?? false,
-      phoneVerified: decoded.phone_verified || false,
+      userId: user.id,
+      email: profile?.email || user.email || '',
+      role: (profile?.role || user.user_metadata?.role || user.app_metadata?.role || 'farmer') as UserRole,
+      emailVerified: profile?.email_verified ?? profile?.verified ?? Boolean(user.email_confirmed_at),
+      phoneVerified: profile?.phone_verified ?? Boolean(user.phone_confirmed_at),
     }
 
     next()
@@ -83,7 +101,7 @@ export async function authMiddleware(
 
     res.status(401).json({
       error: {
-        message: 'Authentication failed',
+        message: 'Invalid or expired authentication token',
         code: ErrorCode.INVALID_TOKEN,
       },
     })
@@ -92,44 +110,44 @@ export async function authMiddleware(
 
 /**
  * Optional authentication middleware
- * Does not throw if token is missing, but validates if present
+ * Does not throw if token is missing, but verifies if present
  */
 export async function optionalAuthMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  try {
-    // Extract JWT
-    let token: string | null = null
+  let token: string | null = null
 
-    const authHeader = req.headers.authorization
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.substring(7)
-    }
-
-    if (!token) {
-      token = req.cookies['sb-auth-token'] || req.cookies['auth-token']
-    }
-
-    // If token exists, verify it
-    if (token) {
-      const decoded = verifyJWT(token)
-      const profile = await getApplicationProfile(decoded.sub || decoded.user_id, decoded.email)
-      req.auth = {
-        userId: decoded.sub || decoded.user_id,
-        email: profile?.email || decoded.email,
-        role: (profile?.role || decoded.user_metadata?.role || decoded.app_metadata?.role || 'farmer') as UserRole,
-        emailVerified: profile?.email_verified ?? profile?.verified ?? decoded.email_verified ?? false,
-        phoneVerified: decoded.phone_verified || false,
-      }
-    }
-
-    next()
-  } catch (error) {
-    // Continue without auth context
-    next()
+  const authHeader = req.headers.authorization
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.substring(7)
   }
+
+  if (!token && req.cookies) {
+    token = req.cookies['sb-auth-token'] || req.cookies['auth-token']
+  }
+
+  if (!token) {
+    return next()
+  }
+
+  try {
+    const user = await verifyJWT(token)
+    const profile = await getApplicationProfile(user.id, user.email)
+
+    req.auth = {
+      userId: user.id,
+      email: profile?.email || user.email || '',
+      role: (profile?.role || user.user_metadata?.role || user.app_metadata?.role || 'farmer') as UserRole,
+      emailVerified: profile?.email_verified ?? profile?.verified ?? Boolean(user.email_confirmed_at),
+      phoneVerified: profile?.phone_verified ?? Boolean(user.phone_confirmed_at),
+    }
+  } catch {
+    // Continue without auth context if token is invalid or expired
+  }
+
+  next()
 }
 
 /**
@@ -204,7 +222,6 @@ export function requirePermission(resource: string, action: string) {
       )
     }
 
-    // Check if user has permission
     const hasPermission = roleService.hasPermission(
       req.auth.role,
       resource,
@@ -225,70 +242,6 @@ export function requirePermission(resource: string, action: string) {
 
     next()
   }
-}
-
-/**
- * Verify JWT token (placeholder)
- * In production, use a JWT library with proper RS256 verification
- */
-function verifyJWT(token: string): any {
-  try {
-    // This is a simplified example
-    // In production:
-    // 1. Use jsonwebtoken library with public key
-    // 2. Verify signature with Supabase's RS256 public key
-    // 3. Check expiration and other claims
-
-    // For now, decode without verification
-    const parts = token.split('.')
-    if (parts.length !== 3) {
-      throw new Error('Invalid JWT format')
-    }
-
-    const payload = JSON.parse(
-      Buffer.from(parts[1], 'base64').toString()
-    )
-
-    // Check expiration
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      throw new AuthenticationError(
-        'Token has expired',
-        ErrorCode.EXPIRED_TOKEN
-      )
-    }
-
-    return payload
-  } catch (error) {
-    if (error instanceof AuthenticationError) {
-      throw error
-    }
-    throw new AuthenticationError(
-      'Invalid token',
-      ErrorCode.INVALID_TOKEN
-    )
-  }
-}
-
-async function getApplicationProfile(userId?: string, email?: string): Promise<any | null> {
-  if (!userId && !email) return null
-
-  const supabase = createSupabaseAdminClient()
-  const selectors = [
-    { table: 'profiles', column: userId ? 'id' : 'email', value: userId || email },
-    { table: 'users', column: userId ? 'id' : 'email', value: userId || email },
-  ]
-
-  for (const selector of selectors) {
-    const { data, error } = await supabase
-      .from(selector.table)
-      .select('*')
-      .eq(selector.column, selector.value)
-      .maybeSingle()
-
-    if (!error && data) return data
-  }
-
-  return null
 }
 
 /**

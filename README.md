@@ -1,16 +1,20 @@
 # 🌾 AgriKart 2.0 — Farmer-Centric AgriTech Platform
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-agri--kart.vercel.app-22c55e?style=for-the-badge&logo=vercel)](https://agri-kart.vercel.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)](https://nextjs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green?logo=node.js)](https://nodejs.org/)
-[![Supabase](<https://img.shields.io/badge/Database-Supabase%20(PostgreSQL)-3ECF8E?logo=supabase>)](https://supabase.com/)
+[![Supabase](https://img.shields.io/badge/Database-Supabase%20(PostgreSQL)-3ECF8E?logo=supabase)](https://supabase.com/)
+[![Clerk](https://img.shields.io/badge/Auth-Clerk-6C47FF?logo=clerk)](https://clerk.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![FastAPI](https://img.shields.io/badge/ML-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://www.python.org/)
 
+> 🌐 **Live Web Application:** [https://agri-kart.vercel.app/](https://agri-kart.vercel.app/)
+>
 > **Your Farmer's Digital Companion** — A comprehensive digital ecosystem combining marketplace, disease intelligence, AI guidance, government information, and continuous learning.
 
-AgriKart 2.0 is a **production-grade, AI-ready agricultural platform** that empowers Indian farmers with technology, knowledge, and direct market access. Beyond e-commerce, it's an intelligent companion providing disease detection, expert guidance, government scheme information, and agricultural news—all powered by continuous feedback loops.
+AgriKart 2.0 is a **production-grade, AI-ready agricultural platform** that empowers Indian farmers with technology, knowledge, and direct market access. Beyond e-commerce, it's an intelligent companion providing disease detection, expert guidance, government scheme information, and agricultural news—all powered by continuous feedback loops. Accessible live at [agri-kart.vercel.app](https://agri-kart.vercel.app/).
 
 ---
 
@@ -52,6 +56,7 @@ Farmers face multiple challenges:
 | Technology           | Version | Role                         |
 | -------------------- | ------- | ---------------------------- |
 | **Next.js**          | 14.x    | React framework (App Router) |
+| **Clerk Next.js**    | 5.x     | User auth, sessions & 2FA    |
 | **React**            | 18.x    | UI library                   |
 | **TypeScript**       | 5.4     | Type safety                  |
 | **Tailwind CSS**     | 3.4     | Utility-first styling        |
@@ -61,7 +66,7 @@ Farmers face multiple challenges:
 | **Framer Motion**    | 11.x    | Animations & transitions     |
 | **React Icons**      | 5.x     | Icon library                 |
 | **Axios**            | 1.7     | HTTP client                  |
-| **Supabase JS**      | 2.x     | Auth & direct DB access      |
+| **Supabase JS**      | 2.x     | Direct PostgreSQL access & storage |
 
 ### Backend
 
@@ -69,9 +74,10 @@ Farmers face multiple challenges:
 | ---------------------- | ------- | ----------------------------- |
 | **Node.js**            | 18+     | Runtime                       |
 | **Express.js**         | 4.18    | REST API framework            |
+| **@clerk/backend**     | 1.x     | Clerk JWT token verification  |
 | **TypeScript**         | 5.4     | Type safety                   |
 | **Socket.io**          | 4.7     | WebSocket server              |
-| **Supabase Admin SDK** | 2.x     | Database & auth management    |
+| **Supabase Admin SDK** | 2.x     | PostgreSQL & Storage manager  |
 | **Zod**                | 3.x     | Schema validation             |
 | **JWT**                | 9.x     | Token-based authentication    |
 | **Winston**            | 3.x     | Structured logging            |
@@ -102,13 +108,54 @@ Farmers face multiple challenges:
 
 ### Cloud & Infrastructure
 
-| Service                  | Role                              |
-| ------------------------ | --------------------------------- |
-| **Supabase**             | PostgreSQL + Auth + Storage + RLS |
-| **Vercel**               | Frontend deployment & CDN         |
-| **Railway / Render**     | Backend + ML + LLM deployment     |
-| **GitHub Actions**       | CI/CD pipelines                   |
-| **DagsHub** _(optional)_ | ML experiments & model registry   |
+| Service                  | Role                                  |
+| ------------------------ | ------------------------------------- |
+| **Clerk**                | User Identity, Auth & 2FA Management  |
+| **Supabase**             | PostgreSQL Database + Cloud Storage   |
+| **Vercel**               | Frontend deployment & Edge CDN        |
+| **Railway / Render**     | Backend + ML + LLM deployment         |
+| **GitHub Actions**       | CI/CD pipelines                       |
+| **DagsHub** _(optional)_ | ML experiments & model registry       |
+
+---
+
+## 🔐 Hybrid Authentication & Profile Architecture
+
+AgriKart 2.0 adopts a **decoupled hybrid architecture** separating user identity authentication from core business data:
+
+```
+                  ┌─────────────────────────────────────┐
+                  │          Clerk Authentication       │
+                  │ (Email/Pass, Google, 2FA, Sessions) │
+                  └──────────────────┬──────────────────┘
+                                     │ JIT Token Sync
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   AgriKart Full-Stack Application                      │
+│                                                                        │
+│   Frontend:  useAuth Hook  ──►  Farmer / Vendor Role Routing           │
+│   Backend:   clerk_auth    ──►  requireClerkAuth & Role Guard          │
+│   Database:  Supabase DB   ──►  public.profiles & public.vendors       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Authentication Engine (Clerk)**:
+   * Handles user sign-up, sign-in, password resets, Google OAuth, two-factor authentication (2FA), and active device sessions.
+   * Eliminates previous email verification blockers and credential verification issues.
+
+2. **Database & Assets (Supabase PostgreSQL)**:
+   * All business tables (`products`, `orders`, `vendors`, `cart_items`, `reviews`, `disease_predictions`, `schemes`, `articles`, `chat_sessions`) remain securely in Supabase.
+   * The migration script (`clerk_supabase_migration.sql`) decoupled `profiles.id` from `auth.users(id)` into `VARCHAR(255)`, maintaining full referential integrity and clean RLS policies.
+
+3. **Just-in-Time (JIT) Profile Synchronization**:
+   * When a user signs in through Clerk, AgriKart's backend middleware (`backend/src/middleware/clerk_auth/`) and frontend hook (`useAuth`) automatically synchronize user metadata into Supabase `public.profiles` and `public.vendors`.
+
+4. **Comprehensive Settings & Profile Hub (`/profile`)**:
+   * **🌾 Personal Details**: Full Name, Email, Phone, State, Village / City, and Bio.
+   * **🚜 Farm & Land Info**: Land Size (Acres), Farming Type, and Primary Crops grown (used by disease prediction and scheme eligibility engines).
+   * **🏪 Vendor & Business Profile**: Switch between Farmer and Vendor roles, Store Name, GSTIN, PAN, Business Phone, and Warehouse Address.
+   * **🔔 Preferences & Alerts**: Multi-language support (English, Hindi, Marathi, Telugu, Tamil) and custom alert notification switches.
+   * **🛡️ Security & Clerk Manager**: One-click modal to manage Clerk passwords, connected social logins, and multi-factor authentication.
 
 ---
 
@@ -458,6 +505,17 @@ AgriKart/
 - 📊 **Model Versioning** — DagsHub model registry
 - 📊 **Batch Predictions** — Efficient inference
 - 📊 **Performance Monitoring** — Accuracy tracking
+
+---
+
+## 🌐 Live Deployment
+
+AgriKart 2.0 is deployed in production and accessible globally:
+
+* **Production URL:** [https://agri-kart.vercel.app/](https://agri-kart.vercel.app/)
+* **Platform:** Vercel (Next.js 14 App Router)
+* **Database & Storage:** Supabase PostgreSQL & Supabase Cloud Storage
+* **Authentication:** Clerk Authentication Engine
 
 ---
 

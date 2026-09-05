@@ -235,7 +235,7 @@ export async function createReview(
       },
     } as Review;
   } catch (error) {
-    if (error instanceof (ValidationError || DatabaseError)) throw error;
+    if (error instanceof ValidationError || error instanceof DatabaseError) throw error;
     throw new DatabaseError(`Failed to create review: ${String(error)}`);
   }
 }
@@ -368,7 +368,7 @@ export async function updateReview(
 
     return updatedReview as Review;
   } catch (error) {
-    if (error instanceof (NotFoundError || AuthorizationError || DatabaseError)) throw error;
+    if (error instanceof NotFoundError || error instanceof AuthorizationError || error instanceof DatabaseError) throw error;
     throw new DatabaseError(`Failed to update review: ${String(error)}`);
   }
 }
@@ -414,7 +414,7 @@ export async function deleteReview(userId: string, reviewId: string): Promise<vo
     // Recalculate average ratings
     await calculateAverageRating(review.product_id, review.vendor_id);
   } catch (error) {
-    if (error instanceof (NotFoundError || AuthorizationError || DatabaseError)) throw error;
+    if (error instanceof NotFoundError || error instanceof AuthorizationError || error instanceof DatabaseError) throw error;
     throw new DatabaseError(`Failed to delete review: ${String(error)}`);
   }
 }

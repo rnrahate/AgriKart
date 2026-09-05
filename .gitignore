@@ -92,6 +92,26 @@ mobile/.expo-shared/
 **/venv/
 **/.venv/
 
+# ---- Datasets & ML Models (Large Files) ----
+ml/datasets/
+ml/datasets/**
+**/datasets/
+**/datasets/**
+**/Plant_leave_diseases_dataset_with_augmentation/
+**/Plant_leave_diseases_dataset_with_augmentation/**
+ml/**/*.JPG
+ml/**/*.jpg
+ml/**/*.jpeg
+ml/**/*.png
+models/
+models/**
+**/*.pt
+**/*.pth
+**/*.h5
+**/*.onnx
+*.tsbuildinfo
+**/*.tsbuildinfo
+
 # ---- Misc ----
 **/*.tgz
 **/*.zip
@@ -101,3 +121,4 @@ mobile/.expo-shared/
 **/env.txt
 **/.pytest_cache/
 **/.sixth/
+

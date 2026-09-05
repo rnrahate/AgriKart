@@ -45,11 +45,12 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
  */
 router.post('/signup', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const signupData: SignUpRequest = {
+    const signupData: any = {
       email: req.body.email,
       password: req.body.password,
+      confirmPassword: req.body.confirmPassword || req.body.password,
       fullName: req.body.fullName,
-      phone: req.body.phone,
+      phone: req.body.phone || undefined,
       role: req.body.role || 'farmer',
       location: req.body.location,
     }
@@ -376,9 +377,8 @@ router.post(
         })
       }
 
-      // In production, verify currentPassword against Supabase Auth
-      // Then update password using Supabase Auth SDK
-      
+      await authService.changePassword(req.auth.userId, newPassword)
+
       res.status(200).json({
         success: true,
         message: 'Password changed successfully',

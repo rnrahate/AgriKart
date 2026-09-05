@@ -10,6 +10,7 @@
     "export": "next export"
   },
   "dependencies": {
+    "@clerk/nextjs": "^5.7.6",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.7.0",
     "clsx": "^2.0.0",

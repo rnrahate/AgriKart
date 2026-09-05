@@ -6,6 +6,7 @@ import { useCart } from '@/lib/store/cartStore'
 import { useAuth } from '@/lib/hooks/useAuth'
 import Link from 'next/link'
 import { FiCheckCircle, FiChevronLeft } from 'react-icons/fi'
+import { sanitizeError } from '@/lib/errorUtils'
 
 export default function CheckoutPage() {
   const { items, getTotalPrice, clearCart } = useCart()
@@ -68,8 +69,7 @@ export default function CheckoutPage() {
       clearCart()
       setOrderSuccess(true)
     } catch (err: any) {
-      console.error('Checkout error:', err)
-      setError(err.message || 'An error occurred while placing the order. Please try again.')
+      setError(sanitizeError(err, 'An error occurred while placing your order. Please try again.'))
     } finally {
       setIsSubmitting(false)
     }

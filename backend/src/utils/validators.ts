@@ -54,18 +54,21 @@ export const signUpSchema = z.object({
     .toLowerCase(),
   password: z
     .string()
-    .regex(PASSWORD_REGEX, 
-      'Password must be at least 8 characters with uppercase, lowercase, number, and special character'),
+    .min(6, 'Password must be at least 6 characters'),
   confirmPassword: z
-    .string(),
+    .string()
+    .optional(),
   fullName: z
     .string()
     .min(2, 'Full name must be at least 2 characters')
     .max(100, 'Full name must not exceed 100 characters'),
   phone: z
     .string()
-    .regex(PHONE_REGEX, 'Invalid phone number format')
-    .optional(),
+    .optional()
+    .nullable()
+    .refine((val) => !val || PHONE_REGEX.test(val) || /^\d{10,15}$/.test(val), {
+      message: 'Invalid phone number format',
+    }),
   role: z
     .enum(['farmer', 'vendor', 'expert', 'admin'] as const)
     .default('farmer'),
@@ -78,7 +81,7 @@ export const signUpSchema = z.object({
       .regex(PINCODE_REGEX, 'Invalid pincode format')
       .optional(),
   }).optional(),
-}).refine((data) => data.password === data.confirmPassword, {
+}).refine((data) => !data.confirmPassword || data.password === data.confirmPassword, {
   message: 'Passwords do not match',
   path: ['confirmPassword'],
 })
