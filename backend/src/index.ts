@@ -22,6 +22,7 @@ import diseaseRoutes from './routes/disease'
 import schemeRoutes from './routes/schemes'
 import newsRoutes from './routes/news'
 import chatRoutes from './routes/chat'
+import { paymentRouter } from './routes/payment'
 import { authMiddleware } from './middleware/auth'
 import { AppError, isAppError } from './utils/errors'
 
@@ -128,6 +129,8 @@ app.use('/api/disease', diseaseRoutes)
 app.use('/api/schemes', schemeRoutes)
 app.use('/api/news', newsRoutes)
 app.use('/api/chat', chatRoutes)
+app.use('/api', paymentRouter)
+app.use('/api/payment', paymentRouter)
 
 /**
  * Protected API Routes
