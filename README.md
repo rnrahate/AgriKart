@@ -10,11 +10,10 @@
 [![FastAPI](https://img.shields.io/badge/ML-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://www.python.org/)
 
-> 🌐 **Live Web Application:** [https://agri-kart.vercel.app/](https://agri-kart.vercel.app/)
->
+
 > **Your Farmer's Digital Companion** — A comprehensive digital ecosystem combining marketplace, disease intelligence, AI guidance, government information, and continuous learning.
 
-AgriKart 2.0 is a **production-grade, AI-ready agricultural platform** that empowers Indian farmers with technology, knowledge, and direct market access. Beyond e-commerce, it's an intelligent companion providing disease detection, expert guidance, government scheme information, and agricultural news—all powered by continuous feedback loops. Accessible live at [agri-kart.vercel.app](https://agri-kart.vercel.app/).
+AgriKart 2.0 is a **production-grade, AI-ready agricultural platform** that empowers Indian farmers with technology, knowledge, and direct market access. Beyond e-commerce, it's an intelligent companion providing disease detection, expert guidance, government scheme information, and agricultural news—all powered by continuous feedback loops.
 
 ---
 
